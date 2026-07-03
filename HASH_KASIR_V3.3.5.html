@@ -166,7 +166,6 @@
     <div class="print-divider"></div>
     <p class="print-center" style="font-size:10px; margin-top:15px;">Terima kasih atas kepercayaan Anda.<br>Nota wajib dibawa saat pengambilan unit.</p>
 </div>
-
 <script>
     const API_URL = "https://script.google.com/macros/s/AKfycbwMIuH-t-q1ZuENAieeD0BRG3PPRiOLhcuJdeXGzzxSY3MAyPaPQv58mHi3CKD3Bj43vA/exec";
     let CURRENT_INVOICE = "MEMUAT...";
@@ -175,6 +174,25 @@
     window.addEventListener('DOMContentLoaded', () => {
         ambilInvoice(); gantiTipeKunci();
     });
+
+    // --- FUNGSI BARU: PENANGANAN UTAMA BUG KONEKSI CLOUD (AUTO RETRY) ---
+    async function fetchDenganRetry(url, opsi = {}, percobaan = 1) {
+        const MAX_PERCOBAAN = 3;
+        try {
+            const response = await fetch(url, opsi);
+            if (!response.ok) throw new Error("Respons server bermasalah");
+            return response;
+        } catch (error) {
+            if (percobaan < MAX_PERCOBAAN) {
+                console.warn(`Koneksi terganggu. Mencoba menghubungkan ulang ke-${percobaan}...`);
+                // Tunggu 1.5 detik sebelum mencoba kembali ke cloud
+                await new Promise(resolve => setTimeout(resolve, 1500));
+                return await fetchDenganRetry(url, opsi, percobaan + 1);
+            } else {
+                throw error;
+            }
+        }
+    }
 
     function gantiTipeKunci() {
         const tipe = document.getElementById('select_tipe_kunci').value;
@@ -213,7 +231,7 @@
         const btnInv = document.getElementById('btn_ambil_inv');
         btnInv.innerText = "Mengambil nomor dari Cloud...";
         try {
-            let res = await fetch(`${API_URL}?Aksi=GET_INVOICE&SandiKeamanan=HASHKRIAN2026`);
+            let res = await fetchDenganRetry(`${API_URL}?Aksi=GET_INVOICE&SandiKeamanan=HASHKRIAN2026`);
             let data = await res.json();
             if(data.status === "sukses") { CURRENT_INVOICE = data.invoice; btnInv.innerText = "NO. NOTA AKTIF: " + CURRENT_INVOICE; }
         } catch (e) {
@@ -226,7 +244,7 @@
         const container = document.getElementById('daftar_invoice_belum_lunas');
         container.innerHTML = '<div style="padding:15px; text-align:center; color:#718096;">Menghubungi Cloud Google Sheets...</div>';
         try {
-            let res = await fetch(`${API_URL}?Aksi=GET_BELUM_LUNAS&SandiKeamanan=HASHKRIAN2026`);
+            let res = await fetchDenganRetry(`${API_URL}?Aksi=GET_BELUM_LUNAS&SandiKeamanan=HASHKRIAN2026`);
             let data = await res.json();
             if(data.status === "sukses" && data.data.length > 0) {
                 daftarNotaLokal = data.data; container.innerHTML = "";
@@ -255,7 +273,7 @@
         document.getElementById('pelunasan_merk').value = nota.merk || "-";
         document.getElementById('pelunasan_kerusakan').value = nota.kerusakan || "-";
         document.getElementById('pelunasan_passcode').value = nota.passcode || "-";
-        document.getElementById('pelunasan_catatan').value = nota.catatan || "-"; // Angkut catatan risiko
+        document.getElementById('pelunasan_catatan').value = nota.catatan || "-";
     }
 
     async function simpanTransaksi() {
@@ -264,6 +282,7 @@
         if (!nama) { alert("Nama Customer wajib diisi!"); return; }
         const btnSimpan = document.getElementById('btn_simpan');
         btnSimpan.disabled = true;
+        btnSimpan.innerText = "Mengirim ke Cloud...";
         
         let d = new Date(); let waktuStr = `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()} ${d.getHours()}:${d.getMinutes()}:${d.getSeconds()}`;
         const harga = parseFloat(document.getElementById('entry_harga').value) || 0;
@@ -282,13 +301,16 @@
         let tipeKunci = document.getElementById('select_tipe_kunci').value;
         let finalCode = document.getElementById('entry_passcode').value;
         formData.append("Passcode", `[${tipeKunci}] ${finalCode}`);
-        formData.append("Catatan", document.getElementById('entry_catatan').value); // Kirim ke Sheet
+        formData.append("Catatan", document.getElementById('entry_catatan').value);
 
         try {
-            await fetch(API_URL, { method: "POST", body: formData, headers: { "Content-Type": "application/x-www-form-urlencoded" } });
+            await fetchDenganRetry(API_URL, { method: "POST", body: formData, headers: { "Content-Type": "application/x-www-form-urlencoded" } });
             alert("✅ BERHASIL DIKIRIM KE CLOUD!\n\nNomor Invoice: " + CURRENT_INVOICE);
-        } catch (e) { alert("Gagal koneksi Cloud"); }
+        } catch (e) { 
+            alert("⚠️ Koneksi cloud terputus total. Periksa WiFi tablet Anda lalu coba klik simpan lagi."); 
+        }
         btnSimpan.disabled = false;
+        btnSimpan.innerText = "SIMPAN NOTA BARU (CLOUD)";
     }
 
     function resetFormNotaBaru() {
@@ -321,9 +343,9 @@
         formData.append("Aksi", "PELUNASAN"); formData.append("SandiKeamanan", "HASHKRIAN2026");
         formData.append("Invoice", inv); formData.append("Bayar", bayar);
         try {
-            await fetch(API_URL, { method: "POST", body: formData, headers: { "Content-Type": "application/x-www-form-urlencoded" } });
+            await fetchDenganRetry(API_URL, { method: "POST", body: formData, headers: { "Content-Type": "application/x-www-form-urlencoded" } });
             alert("✅ BERHASIL DILUNASI DI CLOUD!");
-        } catch(e) { alert("Proses selesai dikirim."); }
+        } catch(e) { alert("Gagal memperbarui pelunasan ke Cloud. Silakan coba kembali."); }
         btnLunas.disabled = false;
     }
 
@@ -337,7 +359,6 @@
         document.getElementById('p_unit').innerText = document.getElementById('entry_merk').value || "-";
         document.getElementById('p_rusak').innerText = document.getElementById('entry_kerusakan').value || "-";
         
-        // Cetak Catatan Risiko di Tanda Terima
         let catatanAwal = document.getElementById('entry_catatan').value;
         document.getElementById('p_catatan_text').innerText = catatanAwal ? catatanAwal : "Tidak ada catatan risiko fisik awal.";
 
@@ -374,7 +395,6 @@
         document.getElementById('p_rusak').innerText = document.getElementById('pelunasan_kerusakan').value;
         document.getElementById('p_passcode_text').innerText = document.getElementById('pelunasan_passcode').value;
         
-        // Cetak Catatan Risiko dari Data Tarikan Cloud pas Pelunasan
         let catatanCloud = document.getElementById('pelunasan_catatan').value;
         document.getElementById('p_catatan_text').innerText = (catatanCloud && catatanCloud !== "-") ? catatanCloud : "Tidak ada catatan risiko fisik awal.";
         
@@ -419,11 +439,24 @@
             if (dist < 18 && !path.find(p => p.id === dot.id)) { path.push(dot); document.getElementById('entry_passcode').value = path.map(p => p.id).join("-"); }
         });
     }
+    
+    // --- PENANGANAN BUG LAYAR SERET: FIX EVENT LISTENERS DENGAN PREVENTDEFAULT & PASSIVE FALSE ---
     canvas.addEventListener('mousedown', (e) => { isDrawing = true; path = []; document.getElementById('entry_passcode').value=""; checkCollision(getMousePos(e)); drawCanvas(); });
     canvas.addEventListener('mousemove', (e) => { if(isDrawing) { checkCollision(getMousePos(e)); drawCanvas(); } });
     window.addEventListener('mouseup', () => { isDrawing = false; drawCanvas(); } );
-    canvas.addEventListener('touchstart', (e) => { isDrawing = true; path = []; checkCollision(getMousePos(e)); drawCanvas(); });
-    canvas.addEventListener('touchmove', (e) => { if(isDrawing) { checkCollision(getMousePos(e)); drawCanvas(); } });
+    
+    canvas.addEventListener('touchstart', (e) => { 
+        e.preventDefault(); // Mengunci layar tablet agar tidak gerak
+        isDrawing = true; path = []; checkCollision(getMousePos(e)); drawCanvas(); 
+    }, { passive: false });
+    
+    canvas.addEventListener('touchmove', (e) => { 
+        if(isDrawing) { 
+            e.preventDefault(); // Mengunci layar tablet agar tidak gerak saat jari menggambar pola
+            checkCollision(getMousePos(e)); drawCanvas(); 
+        } 
+    }, { passive: false });
+    
     window.addEventListener('touchend', () => { isDrawing = false; drawCanvas(); } );
     function resetPattern() { path = []; if(document.getElementById('select_tipe_kunci').value === "POLA") document.getElementById('entry_passcode').value = ""; drawCanvas(); }
     drawCanvas();
