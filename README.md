@@ -27,8 +27,7 @@ Menyediakan modul input catatan risiko fisik awal (seperti: *cat mengelupas, bac
 ### 4. Dual-Receipt Workflow (Arsitektur Dua Struk)
 Sistem pintar yang memisahkan logika cetak :
 * **Struk Tanda Terima:** Mencetak data DP (Uang Muka), estimasi biaya, detail unit, catatan risiko, dan gambar pola kunci untuk dibawa pulang pelanggan .
-* **Struk Pelunasan Akhir:** Mengambil data asli dari cloud berdasarkan nomor invoice, lalu otomatis mengalkulasi total biaya, akumulasi DP awal, dan sisa pembayaran hari itu hingga berstatus `LUNAS`[cite: <img width="1364" height="640" alt="database" src="https://github.com/user-attachments/assets/fe010023-e7f4-4b9f-956a-e56fa0e4ab0b" />
-1].
+* **Struk Pelunasan Akhir:** Mengambil data asli dari cloud berdasarkan nomor invoice, lalu otomatis mengalkulasi total biaya, akumulasi DP awal, dan sisa pembayaran hari itu hingga berstatus `LUNAS`
 
 ---
 
